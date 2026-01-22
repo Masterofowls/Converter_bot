@@ -57,7 +57,7 @@ class CommandHandlers:
         """Handle /help command"""
         await update.message.reply_text(
             format_help_message(),
-            parse_mode=ParseMode.MARKDOWN_V2,
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=create_main_menu(),
         )
 

@@ -39,16 +39,16 @@ def format_help_message() -> str:
 /help - Show this help
 /convert - Start conversion mode
 /history - View conversion history
-/recover \\<id\\> - Recover file by ID
+/recover <id> - Recover file by ID
 /settings - Bot settings
 /cancel - Cancel current operation
 /formats - Show supported formats
 
 *How to convert:*
-1\\. Send me one or multiple files
-2\\. Select target format from the menu
-3\\. Wait for conversion \\(progress shown\\)
-4\\. Download your converted files
+1. Send me one or multiple files
+2. Select target format from the menu
+3. Wait for conversion (progress shown)
+4. Download your converted files
 
 *Tips:*
 • You can forward files from other chats
@@ -57,7 +57,7 @@ def format_help_message() -> str:
 • Conversion IDs help you recover files
 
 *Limits:*
-• Max file size: 2GB \\(local server\\)
+• Max file size: 2GB (local server)
 • Concurrent conversions: 3
 • History retention: 30 days"""
 

@@ -58,7 +58,7 @@ class CallbackHandlers:
                 await self._handle_format_selection(query, context, data)
             elif data.startswith("page_"):
                 await self._handle_pagination(query, context, data)
-            elif data.startswith("hist"):
+            elif data.startswith("hist") or data == "clear_history":
                 await self._handle_history(query, context, data, user_id)
             elif data.startswith("toggle_") or data.startswith("cycle_"):
                 await self._handle_settings(query, context, data, user_id)

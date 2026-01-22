@@ -1,12 +1,15 @@
 """
 E-book Converter - handles FB2, EPUB, MOBI
-Uses calibre's ebook-convert for conversions
+Uses calibre's ebook-convert for conversions, with Python fallback
 """
 
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+import pdfplumber
+from ebooklib import epub
 
 from .base import BaseConverter, ConversionResult
 
@@ -30,7 +33,7 @@ class EbookConverter(BaseConverter):
         output_format: str,
         options: Optional[Dict[str, Any]] = None,
     ) -> ConversionResult:
-        """Convert e-book to specified format using ebook-convert"""
+        """Convert e-book to specified format"""
         start_time = datetime.now()
         options = options or {}
 
@@ -41,17 +44,23 @@ class EbookConverter(BaseConverter):
 
             output_path = self.get_output_path(input_path, output_format)
 
-            # Build ebook-convert command
-            cmd = self._build_convert_command(
-                input_path, output_path, output_format, options
-            )
-
-            stdout, stderr, returncode = await self.run_command(
-                cmd, timeout=options.get("timeout", 600)
-            )
-
-            if returncode != 0:
-                raise RuntimeError(f"ebook-convert error: {stderr}")
+            # Check for Python-native conversions first (no Calibre needed)
+            if input_format == "pdf" and output_format == "epub":
+                logger.info("Using Python-native PDF→EPUB conversion")
+                await self._pdf_to_epub_python(input_path, output_path, options)
+            elif input_format == "txt" and output_format == "epub":
+                logger.info("Using Python-native TXT→EPUB conversion")
+                await self._txt_to_epub_python(input_path, output_path, options)
+            else:
+                # Try Calibre for other conversions
+                cmd = self._build_convert_command(
+                    input_path, output_path, output_format, options
+                )
+                stdout, stderr, returncode = await self.run_command(
+                    cmd, timeout=options.get("timeout", 600)
+                )
+                if returncode != 0:
+                    raise RuntimeError(f"ebook-convert error: {stderr}")
 
             elapsed = (datetime.now() - start_time).total_seconds()
 
@@ -66,13 +75,21 @@ class EbookConverter(BaseConverter):
             )
 
         except Exception as e:
+            error_str = str(e)
+            if "cannot find the file" in error_str.lower():
+                error_msg = (
+                    "Calibre not installed. Install from: "
+                    "https://calibre-ebook.com/download"
+                )
+            else:
+                error_msg = error_str
             logger.error(f"E-book conversion failed: {e}")
             return ConversionResult(
                 success=False,
                 input_path=input_path,
                 input_format=input_path.suffix.lstrip("."),
                 output_format=output_format,
-                error_message=str(e),
+                error_message=error_msg,
             )
 
     def _build_convert_command(
@@ -162,3 +179,92 @@ class EbookConverter(BaseConverter):
 
         _, _, returncode = await self.run_command(cmd)
         return returncode == 0
+
+    async def _pdf_to_epub_python(
+        self, input_path: Path, output_path: Path, options: dict
+    ):
+        """Convert PDF to EPUB using Python (no Calibre needed)"""
+        book = epub.EpubBook()
+
+        # Set metadata
+        title = options.get("title", input_path.stem)
+        book.set_identifier(f"id-{input_path.stem}")
+        book.set_title(title)
+        book.set_language(options.get("language", "en"))
+        if "author" in options:
+            book.add_author(options["author"])
+
+        # Extract text from PDF
+        chapters = []
+        with pdfplumber.open(str(input_path)) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text()
+                if text:
+                    # Create chapter for each page
+                    chapter = epub.EpubHtml(
+                        title=f"Page {i + 1}",
+                        file_name=f"page_{i + 1}.xhtml",
+                        lang="en",
+                    )
+                    # Convert text to HTML paragraphs
+                    paragraphs = text.split("\n")
+                    html_content = "".join(
+                        f"<p>{p}</p>" for p in paragraphs if p.strip()
+                    )
+                    chapter.content = f"""
+                    <html><head><title>Page {i + 1}</title></head>
+                    <body><h2>Page {i + 1}</h2>{html_content}</body></html>
+                    """
+                    book.add_item(chapter)
+                    chapters.append(chapter)
+
+        # Add navigation
+        book.toc = chapters
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+
+        # Set spine
+        book.spine = ["nav"] + chapters
+
+        # Write EPUB
+        epub.write_epub(str(output_path), book)
+
+    async def _txt_to_epub_python(
+        self, input_path: Path, output_path: Path, options: dict
+    ):
+        """Convert TXT to EPUB using Python"""
+        book = epub.EpubBook()
+
+        title = options.get("title", input_path.stem)
+        book.set_identifier(f"id-{input_path.stem}")
+        book.set_title(title)
+        book.set_language(options.get("language", "en"))
+        if "author" in options:
+            book.add_author(options["author"])
+
+        # Read text
+        text = input_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Create single chapter
+        chapter = epub.EpubHtml(
+            title=title,
+            file_name="content.xhtml",
+            lang="en",
+        )
+        paragraphs = text.split("\n\n")
+        html_content = "".join(
+            f"<p>{p.replace(chr(10), '<br/>')}</p>" for p in paragraphs if p.strip()
+        )
+        chapter.content = f"""
+        <html><head><title>{title}</title></head>
+        <body>{html_content}</body></html>
+        """
+        book.add_item(chapter)
+
+        # Navigation
+        book.toc = [chapter]
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        book.spine = ["nav", chapter]
+
+        epub.write_epub(str(output_path), book)

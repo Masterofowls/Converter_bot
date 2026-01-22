@@ -78,8 +78,11 @@ class ConverterFactory:
     ) -> ConversionResult:
         """Perform conversion using appropriate converter"""
         input_format = input_path.suffix.lstrip(".").lower()
+        output_format_lower = output_format.lower().lstrip(".")
 
-        converter = self.get_converter(input_format)
+        # Smart converter selection based on input AND output format
+        converter = self._select_best_converter(input_format, output_format_lower)
+
         if not converter:
             return ConversionResult(
                 success=False,
@@ -90,6 +93,114 @@ class ConverterFactory:
             )
 
         return await converter.convert(input_path, output_format, options)
+
+    def _select_best_converter(
+        self, input_format: str, output_format: str
+    ) -> Optional[BaseConverter]:
+        """Select the best converter based on both input and output format"""
+
+        # Define format categories for smart routing
+        ebook_formats = {"epub", "mobi", "azw3", "fb2"}
+        spreadsheet_formats = {"xlsx", "xls", "ets", "tsv"}
+        image_formats = {
+            "png",
+            "jpeg",
+            "jpg",
+            "webp",
+            "bmp",
+            "tiff",
+            "tif",
+            "ico",
+            "svg",
+        }
+        video_formats = {"mp4", "avi", "mkv", "mov", "flv", "webm"}
+
+        # --- PDF INPUT ROUTING ---
+        if input_format == "pdf":
+            # PDF -> ebook formats: use ebook converter
+            if output_format in ebook_formats:
+                conv = self._converters.get("ebook")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+            # PDF -> document formats: use document converter
+            else:
+                conv = self._converters.get("document")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- TXT INPUT ROUTING ---
+        if input_format == "txt":
+            # TXT -> ebook formats: use ebook converter
+            if output_format in ebook_formats:
+                conv = self._converters.get("ebook")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+            # TXT -> other: use document converter
+            else:
+                conv = self._converters.get("document")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- HTML INPUT ROUTING ---
+        if input_format == "html":
+            # HTML -> ebook formats: use ebook converter
+            if output_format in ebook_formats:
+                conv = self._converters.get("ebook")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- CSV INPUT ROUTING ---
+        if input_format == "csv":
+            # CSV -> spreadsheet/data formats: use data converter
+            if output_format in spreadsheet_formats | {
+                "json",
+                "xml",
+                "html",
+                "md",
+                "pdf",
+            }:
+                conv = self._converters.get("data")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+            # CSV -> document formats: use document converter
+            else:
+                conv = self._converters.get("document")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- JSON INPUT ROUTING ---
+        if input_format == "json":
+            # JSON from spreadsheet context -> data converter
+            if output_format in spreadsheet_formats | {"csv", "html", "md", "pdf"}:
+                conv = self._converters.get("data")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+            # JSON -> document formats: use document converter
+            else:
+                conv = self._converters.get("document")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- GIF INPUT ROUTING ---
+        if input_format == "gif":
+            # GIF -> video formats: use video converter
+            if output_format in video_formats | {"mp3"}:
+                conv = self._converters.get("video")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+            # GIF -> image formats: use image converter
+            else:
+                conv = self._converters.get("image")
+                if conv and conv.can_convert(input_format, output_format):
+                    return conv
+
+        # --- DEFAULT: find any converter that supports this conversion ---
+        for converter in self._converters.values():
+            if converter.can_convert(input_format, output_format):
+                return converter
+
+        # Fallback to format map (for single-converter formats)
+        return self.get_converter(input_format)
 
     def get_supported_formats(self) -> Dict[str, set]:
         """Get all supported input and output formats"""

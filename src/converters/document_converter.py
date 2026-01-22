@@ -6,8 +6,6 @@ import csv
 import json
 import logging
 import re
-import sys
-import warnings
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -16,23 +14,8 @@ from typing import Any, Dict, Optional
 import pdfplumber
 import yaml
 from docx import Document
+from fpdf import FPDF
 from markdown import markdown
-
-# WeasyPrint requires GTK/Cairo which aren't available on Windows by default
-# Skip importing it entirely on Windows to avoid the warning message
-WEASYPRINT_AVAILABLE = False
-WeasyHTML = None
-
-if sys.platform != "win32":
-    # Only try to import WeasyPrint on non-Windows systems
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning)
-        try:
-            from weasyprint import HTML as WeasyHTML
-
-            WEASYPRINT_AVAILABLE = True
-        except (ImportError, OSError):
-            pass
 
 from .base import BaseConverter, ConversionResult
 
@@ -158,14 +141,14 @@ class DocumentConverter(BaseConverter):
         return methods.get((input_fmt, output_fmt))
 
     async def _txt_to_pdf(self, inp: Path, out: Path, opts: dict):
-        if not WEASYPRINT_AVAILABLE:
-            raise RuntimeError("WeasyPrint not available")
         text = inp.read_text(encoding="utf-8", errors="ignore")
-        html = f"""<html><head><style>
-        body {{ font-family: Arial; padding: 20px; }}
-        pre {{ white-space: pre-wrap; }}
-        </style></head><body><pre>{text}</pre></body></html>"""
-        WeasyHTML(string=html).write_pdf(str(out))
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=10)
+        for line in text.split("\n"):
+            pdf.multi_cell(0, 5, line)
+        pdf.output(str(out))
 
     async def _txt_to_docx(self, inp: Path, out: Path, opts: dict):
         text = inp.read_text(encoding="utf-8", errors="ignore")
@@ -179,18 +162,29 @@ class DocumentConverter(BaseConverter):
         out.write_text(text, encoding="utf-8")
 
     async def _md_to_pdf(self, inp: Path, out: Path, opts: dict):
-        if not WEASYPRINT_AVAILABLE:
-            raise RuntimeError("WeasyPrint not available")
         md_text = inp.read_text(encoding="utf-8", errors="ignore")
-        html_content = markdown(md_text, extensions=["tables", "fenced_code"])
-        styled = f"""<html><head><style>
-        body {{ font-family: Arial; padding: 20px; }}
-        code {{ background: #f4f4f4; padding: 2px 5px; }}
-        pre {{ background: #f4f4f4; padding: 10px; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; }}
-        </style></head><body>{html_content}</body></html>"""
-        WeasyHTML(string=styled).write_pdf(str(out))
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        for line in md_text.split("\n"):
+            if line.startswith("# "):
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.multi_cell(0, 8, line[2:])
+            elif line.startswith("## "):
+                pdf.set_font("Helvetica", "B", 14)
+                pdf.multi_cell(0, 7, line[3:])
+            elif line.startswith("### "):
+                pdf.set_font("Helvetica", "B", 12)
+                pdf.multi_cell(0, 6, line[4:])
+            elif line.startswith("```"):
+                pdf.set_font("Courier", size=9)
+            elif line.startswith("- ") or line.startswith("* "):
+                pdf.set_font("Helvetica", size=10)
+                pdf.multi_cell(0, 5, "  • " + line[2:])
+            else:
+                pdf.set_font("Helvetica", size=10)
+                pdf.multi_cell(0, 5, line)
+        pdf.output(str(out))
 
     async def _md_to_html(self, inp: Path, out: Path, opts: dict):
         md_text = inp.read_text(encoding="utf-8", errors="ignore")
@@ -229,14 +223,19 @@ th, td {{ border: 1px solid #ddd; padding: 8px; }}
         doc.save(str(out))
 
     async def _docx_to_pdf(self, inp: Path, out: Path, opts: dict):
-        if not WEASYPRINT_AVAILABLE:
-            raise RuntimeError("WeasyPrint not available")
         doc = Document(str(inp))
-        parts = [f"<p>{p.text}</p>" for p in doc.paragraphs]
-        html = f"""<html><head><style>
-        body {{ font-family: Arial; padding: 20px; }}
-        </style></head><body>{"".join(parts)}</body></html>"""
-        WeasyHTML(string=html).write_pdf(str(out))
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=10)
+        for para in doc.paragraphs:
+            if para.style.name.startswith("Heading"):
+                pdf.set_font("Helvetica", "B", 14)
+                pdf.multi_cell(0, 7, para.text)
+                pdf.set_font("Helvetica", size=10)
+            else:
+                pdf.multi_cell(0, 5, para.text)
+        pdf.output(str(out))
 
     async def _docx_to_txt(self, inp: Path, out: Path, opts: dict):
         doc = Document(str(inp))
@@ -393,26 +392,31 @@ th, td {{ border: 1px solid #ddd; padding: 8px; }}
         out.write_text("\n".join(lines), encoding="utf-8")
 
     async def _csv_to_pdf(self, inp: Path, out: Path, opts: dict):
-        if not WEASYPRINT_AVAILABLE:
-            raise ValueError("PDF generation requires WeasyPrint")
         with open(inp, "r", encoding="utf-8") as f:
             rows = list(csv.reader(f))
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
         if not rows:
-            WeasyHTML(string="<html><body>Empty</body></html>").write_pdf(str(out))
+            pdf.set_font("Helvetica", size=10)
+            pdf.cell(0, 10, "Empty file")
+            pdf.output(str(out))
             return
-        html_rows = []
-        hdr = "".join(f"<th>{h}</th>" for h in rows[0])
-        html_rows.append(f"<tr>{hdr}</tr>")
-        for row in rows[1:]:
-            cells = "".join(f"<td>{c}</td>" for c in row)
-            html_rows.append(f"<tr>{cells}</tr>")
-        html = f"""<html><head><style>
-        body {{ font-family: Arial; padding: 20px; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; }}
-        th {{ background: #f2f2f2; }}
-        </style></head><body><table>{"".join(html_rows)}</table></body></html>"""
-        WeasyHTML(string=html).write_pdf(str(out))
+        col_count = len(rows[0])
+        col_width = (pdf.w - 20) / max(col_count, 1)
+        # Header
+        pdf.set_fill_color(242, 242, 242)
+        pdf.set_font("Helvetica", "B", 8)
+        for cell in rows[0]:
+            pdf.cell(col_width, 8, str(cell)[:20], border=1, fill=True)
+        pdf.ln()
+        # Data rows
+        pdf.set_font("Helvetica", size=7)
+        for row in rows[1:500]:  # Limit rows
+            for cell in row:
+                pdf.cell(col_width, 6, str(cell)[:20], border=1)
+            pdf.ln()
+        pdf.output(str(out))
 
     def _dict_to_xml(self, data: Any, root_name: str) -> str:
         """Convert dictionary to XML string"""

@@ -178,32 +178,49 @@ class DataConverter(BaseConverter):
         return "\n".join(lines)
 
     def _df_to_pdf(self, df: pd.DataFrame, output_path: Path, options: dict):
-        """Convert DataFrame to PDF"""
-        from weasyprint import HTML
+        """Convert DataFrame to PDF using fpdf2 (no GTK deps)"""
+        from fpdf import FPDF
 
-        html = df.to_html(index=options.get("include_index", False), classes="table")
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
 
-        styled_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-body {{ font-family: Arial, sans-serif; padding: 20px; }}
-.table {{ border-collapse: collapse; width: 100%; font-size: 10px; }}
-.table th, .table td {{
-    border: 1px solid #333; padding: 6px; text-align: left;
-}}
-.table th {{ background-color: #4CAF50; color: white; }}
-.table tr:nth-child(even) {{ background-color: #f9f9f9; }}
-</style>
-</head>
-<body>
-<h1>{options.get("title", "Data Export")}</h1>
-{html}
-</body>
-</html>"""
+        # Title
+        pdf.set_font("Helvetica", "B", 14)
+        title = options.get("title", "Data Export")
+        pdf.cell(0, 10, title, ln=True, align="C")
+        pdf.ln(5)
 
-        HTML(string=styled_html).write_pdf(str(output_path))
+        # Table
+        pdf.set_font("Helvetica", size=8)
+        cols = list(df.columns)
+        col_width = (pdf.w - 20) / max(len(cols), 1)
+
+        # Header
+        pdf.set_fill_color(76, 175, 80)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 8)
+        for col in cols:
+            pdf.cell(col_width, 8, str(col)[:15], border=1, fill=True)
+        pdf.ln()
+
+        # Rows
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", size=7)
+        for idx, row in df.head(500).iterrows():  # Limit rows for PDF
+            if pdf.get_y() > 270:
+                pdf.add_page()
+            for col in cols:
+                val = str(row[col]) if pd.notna(row[col]) else ""
+                pdf.cell(col_width, 6, val[:20], border=1)
+            pdf.ln()
+
+        if len(df) > 500:
+            pdf.ln(5)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.cell(0, 10, f"... and {len(df) - 500} more rows", ln=True)
+
+        pdf.output(str(output_path))
 
     async def get_data_info(self, input_path: Path) -> dict:
         """Get data file information"""
