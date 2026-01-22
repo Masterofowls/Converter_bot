@@ -1,0 +1,17 @@
+# Render Blueprint Configuration
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: worker
+    name: converter-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt # or oregon, singapore, etc.
+    plan: starter # starter, standard, pro
+    envVars:
+      - key: BOT_TOKEN
+        sync: false # Set manually in Render dashboard
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: LOG_LEVEL
+        value: "INFO"

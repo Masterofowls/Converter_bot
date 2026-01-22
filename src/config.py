@@ -8,10 +8,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Set
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 # Bot Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8575519773:AAFIKFqUAlOI2vZw1_ei7xOAA7_gQWKfiJc")
-BOT_USERNAME = "@convertationsbot"
-BOT_ID = 8575519773
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
+
+BOT_USERNAME = os.getenv("BOT_USERNAME", "@convertationsbot")
+BOT_ID = int(os.getenv("BOT_ID", "8575519773"))
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent

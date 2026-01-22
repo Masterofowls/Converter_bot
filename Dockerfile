@@ -13,22 +13,16 @@ WORKDIR /app
 # Install uv for fast package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install system dependencies (optimized layer)
+# Install system dependencies (optimized for Render - no Calibre/WeasyPrint)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # FFmpeg for audio/video conversion
     ffmpeg \
-    # WeasyPrint dependencies
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-0 \
-    libffi-dev \
-    # Cairo for SVG
+    # Cairo for SVG processing
     libcairo2 \
     libcairo2-dev \
+    libffi-dev \
     # For PDF processing
     poppler-utils \
-    # Calibre for e-book conversion
-    calibre \
     # For 3D model processing
     libassimp-dev \
     # Clean up

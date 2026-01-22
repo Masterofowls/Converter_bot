@@ -1,5 +1,5 @@
 # Converter Bot - Python Dependencies
-# Optimized for minimal footprint
+# Optimized for Render deployment
 
 # Telegram Bot Framework
 python-telegram-bot>=21.0
@@ -12,8 +12,11 @@ aiohttp>=3.9.0
 python-docx>=1.1.0
 PyPDF2>=3.0.1
 pdfplumber>=0.10.0
-weasyprint>=60.0
+fpdf2>=2.7.0
 markdown>=3.5.0
+
+# E-book conversion (Python-native, no Calibre needed)
+EbookLib>=0.18
 
 # Data formats
 PyYAML>=6.0.1

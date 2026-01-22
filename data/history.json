@@ -1,6 +1,51 @@
 {
   "8019993731": [
     {
+      "id": "542b6b55",
+      "user_id": 8019993731,
+      "original_name": "photo_3_2025-12-28_22-25-08.jpg",
+      "converted_name": "20260122_202956_photo_3_2025-12-28_22-25-08.ico",
+      "source_format": "jpg",
+      "target_format": "ico",
+      "file_size": 25342,
+      "timestamp": "2026-01-22T20:29:56.798437",
+      "status": "success",
+      "file_id": "BQACAgIAAxkDAAIBIWlyiL7x-WgslJ81lC5oVUdJeVf5AAJukQACNUKYS6i1yigy18WUOAQ",
+      "message_id": 289,
+      "chat_id": 8019993731,
+      "checksum": null
+    },
+    {
+      "id": "d85104ab",
+      "user_id": 8019993731,
+      "original_name": "photo_3_2025-12-28_22-25-08.jpg",
+      "converted_name": "20260122_202952_photo_3_2025-12-28_22-25-08.png",
+      "source_format": "jpg",
+      "target_format": "png",
+      "file_size": 158998,
+      "timestamp": "2026-01-22T20:29:52.829428",
+      "status": "success",
+      "file_id": "BQACAgIAAxkDAAIBHmlyiLq7b0-6jz_jL9r0yPG5GMTcAAJtkQACNUKYS86cnnYK1jIwOAQ",
+      "message_id": 286,
+      "chat_id": 8019993731,
+      "checksum": null
+    },
+    {
+      "id": "9a8cbc8f",
+      "user_id": 8019993731,
+      "original_name": "photo_3_2025-12-28_22-25-08.jpg",
+      "converted_name": "20260122_202944_photo_3_2025-12-28_22-25-08.webp",
+      "source_format": "jpg",
+      "target_format": "webp",
+      "file_size": 24630,
+      "timestamp": "2026-01-22T20:29:47.270722",
+      "status": "success",
+      "file_id": null,
+      "message_id": 283,
+      "chat_id": 8019993731,
+      "checksum": null
+    },
+    {
       "id": "2bfdec65",
       "user_id": 8019993731,
       "original_name": "Улучшенное_Резюме_Разработчика_Copy.pdf",

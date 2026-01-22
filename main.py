@@ -33,13 +33,19 @@ from src.utils.file_manager import FileManager
 from src.utils.history import HistoryManager
 
 # Configure logging
+log_handlers = [logging.StreamHandler(sys.stdout)]
+
+# Add file handler only if DATA_DIR exists and is writable
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    log_handlers.append(logging.FileHandler(DATA_DIR / "bot.log", encoding="utf-8"))
+except (OSError, PermissionError):
+    pass  # Skip file logging on Render if permissions don't allow
+
 logging.basicConfig(
     format=LOG_FORMAT,
     level=getattr(logging, LOG_LEVEL, logging.INFO),
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(DATA_DIR / "bot.log", encoding="utf-8"),
-    ],
+    handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
 

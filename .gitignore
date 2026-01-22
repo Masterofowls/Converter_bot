@@ -1,5 +1,29 @@
+# Environment files (contain secrets!)
 .env
+.env.local
+.env.production
 
+# Logs
 /data/bot.log
-
 bot.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.Python
+
+# Temp files
+/temp/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

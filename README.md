@@ -194,13 +194,56 @@ Converter_bot/
 
 3. Install system dependencies:
    - FFmpeg (for audio/video)
-   - Calibre (for e-books)
-   - Cairo (for SVG)
 
 4. Run:
+
+## ☁️ Deploy to Render
+
+### Quick Deploy
+
+1. **Push to GitHub**:
+
    ```bash
-   python main.py
+   git add .
+   git commit -m "Prepare for Render deployment"
+   git push origin main
    ```
+
+2. **Create Render Account**: Go to [render.com](https://render.com)
+
+3. **New Background Worker**:
+   - Click "New +" → "Background Worker"
+   - Connect your GitHub repo
+   - Select Docker runtime
+   - Set environment variable: `BOT_TOKEN=your_token_here`
+
+4. **Deploy**: Render will build and start your bot
+
+### Using render.yaml (Blueprint)
+
+1. Push code to GitHub
+2. Go to Render Dashboard → "New" → "Blueprint"
+3. Connect your repo (it will detect `render.yaml`)
+4. Set the `BOT_TOKEN` secret in the dashboard
+5. Deploy!
+
+### Environment Variables for Render
+
+| Variable       | Required | Description                 |
+| -------------- | -------- | --------------------------- |
+| `BOT_TOKEN`    | ✅ Yes    | Your Telegram bot token     |
+| `LOG_LEVEL`    | No       | INFO, DEBUG, WARNING, ERROR |
+| `BOT_USERNAME` | No       | Your bot's username         |
+
+### Notes for Render
+
+- Uses Python-native PDF/EPUB conversion (no Calibre needed)
+- Lightweight Docker image (~500MB vs 2GB+)
+- FFmpeg included for audio/video
+- History stored in `/app/data` (ephemeral on free tier)
+  ```bash
+  python main.py
+  ```
 
 ## 📝 Notes
 
