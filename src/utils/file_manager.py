@@ -1,5 +1,6 @@
 """
 File Manager - handles temporary file storage and cleanup
+Privacy-focused: files are deleted immediately after use
 """
 
 import asyncio
@@ -16,10 +17,20 @@ logger = logging.getLogger(__name__)
 
 
 class FileManager:
-    """Manages temporary files with automatic cleanup"""
+    """
+    Manages temporary files with automatic cleanup.
+
+    Privacy features:
+    - User isolation: each user has separate directory
+    - Immediate cleanup: files deleted right after sending
+    - Periodic sweep: catches any orphaned files
+    """
 
     def __init__(
-        self, temp_dir: Path, cleanup_interval: int = 300, file_retention: int = 3600
+        self,
+        temp_dir: Path,
+        cleanup_interval: int = 60,  # More frequent cleanup
+        file_retention: int = 300,  # 5 minutes max retention
     ):
         self.temp_dir = temp_dir
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -27,6 +38,7 @@ class FileManager:
         self.file_retention = file_retention
         self._active_files: Set[Path] = set()
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._user_locks: dict = {}  # Per-user locks for isolation
 
     async def start(self):
         """Start the file manager and cleanup task"""
@@ -86,12 +98,22 @@ class FileManager:
         self._active_files.discard(file_path)
 
     async def cleanup_file(self, file_path: Path):
-        """Remove a specific file"""
+        """Remove a specific file immediately (privacy)"""
         try:
             if file_path and file_path.exists():
                 file_path.unlink()
                 self._active_files.discard(file_path)
                 logger.debug(f"Cleaned up file: {file_path}")
+
+                # Also clean parent dir if empty (user dir)
+                parent = file_path.parent
+                if parent != self.temp_dir:
+                    try:
+                        if parent.exists() and not any(parent.iterdir()):
+                            parent.rmdir()
+                            logger.debug(f"Removed empty user dir: {parent}")
+                    except Exception:
+                        pass
         except Exception as e:
             logger.warning(f"Failed to cleanup {file_path}: {e}")
 

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .archive_converter import ArchiveConverter
 from .audio_converter import AudioConverter
 from .base import BaseConverter, ConversionResult
 from .data_converter import DataConverter
@@ -36,6 +37,7 @@ class ConverterFactory:
             "3d_model": Model3DConverter(self.temp_dir),
             "ebook": EbookConverter(self.temp_dir),
             "data": DataConverter(self.temp_dir),
+            "archive": ArchiveConverter(self.temp_dir),
         }
 
         # Build format to converter mapping

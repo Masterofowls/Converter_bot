@@ -32,6 +32,33 @@ LOCAL_API_MAX_SIZE = 2000 * 1024 * 1024  # 2GB for local Bot API
 # Conversion timeout (seconds)
 CONVERSION_TIMEOUT = 600  # 10 minutes
 
+# Rate limiting settings
+RATE_LIMIT_MESSAGES = 30  # Max messages per window
+RATE_LIMIT_WINDOW = 60  # Window in seconds (1 minute)
+RATE_LIMIT_CONVERSIONS = 10  # Max conversions per hour
+RATE_LIMIT_CONVERSION_WINDOW = 3600  # 1 hour
+
+# Security settings
+MAX_FILENAME_LENGTH = 255
+ALLOWED_FILENAME_CHARS = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_. ()[]{}!@#$%^&+=~"
+)
+BLOCKED_EXTENSIONS = {
+    "exe",
+    "bat",
+    "cmd",
+    "sh",
+    "ps1",
+    "vbs",
+    "js",
+    "msi",
+    "scr",
+    "com",
+    "pif",
+    "dll",
+    "sys",
+}
+
 
 # Supported formats organized by category
 @dataclass
@@ -95,6 +122,12 @@ FORMAT_CATEGORIES: Dict[str, FormatCategory] = {
         icon="📊",
         description="Data and spreadsheet files",
     ),
+    "archives": FormatCategory(
+        name="Archives",
+        formats={"zip", "7z", "tar", "gz", "rar"},
+        icon="📦",
+        description="Compressed archive files",
+    ),
 }
 
 # All supported input formats
@@ -152,6 +185,12 @@ CONVERSION_MATRIX: Dict[str, List[str]] = {
     "ets": ["csv", "json", "xml", "xlsx"],
     "xlsx": ["csv", "json", "xml", "pdf"],
     "xls": ["csv", "json", "xml", "xlsx", "pdf"],
+    # Archives
+    "zip": ["tar", "7z"],
+    "7z": ["zip", "tar"],
+    "tar": ["zip", "7z", "gz"],
+    "gz": ["tar", "zip"],
+    "rar": ["zip", "7z", "tar"],
 }
 
 # External API configurations

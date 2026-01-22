@@ -80,12 +80,39 @@ class BaseConverter(ABC):
             and output_format.lower() in self.supported_output_formats
         )
 
-    def get_output_path(self, input_path: Path, output_format: str) -> Path:
-        """Generate output file path"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"{input_path.stem}_{timestamp}_{unique_id}.{output_format}"
-        return self.temp_dir / filename
+    def get_output_path(
+        self,
+        input_path: Path,
+        output_format: str,
+        preserve_name: bool = True,
+    ) -> Path:
+        """
+        Generate output file path.
+
+        Args:
+            input_path: Original input file path
+            output_format: Target format extension
+            preserve_name: If True, keep original filename (just change ext)
+        """
+        if preserve_name:
+            # Keep original name, just change extension
+            filename = f"{input_path.stem}.{output_format}"
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"{input_path.stem}_{timestamp}_{unique_id}.{output_format}"
+
+        output_path = self.temp_dir / filename
+
+        # Handle filename conflicts by adding counter
+        counter = 1
+        base_stem = input_path.stem
+        while output_path.exists():
+            filename = f"{base_stem}_{counter}.{output_format}"
+            output_path = self.temp_dir / filename
+            counter += 1
+
+        return output_path
 
     async def run_command(self, cmd: List[str], timeout: int = 300) -> tuple:
         """

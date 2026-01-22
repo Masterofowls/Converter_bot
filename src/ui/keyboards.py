@@ -144,7 +144,10 @@ def create_multi_file_menu(file_count: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ Add More Files", callback_data="add_more"),
             InlineKeyboardButton("🗑️ Clear All", callback_data="clear_files"),
         ],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="menu_main"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -260,7 +263,7 @@ def create_conversion_progress_menu(conv_id: str) -> InlineKeyboardMarkup:
 
 
 def create_result_menu(conv_id: str, input_format: str = None) -> InlineKeyboardMarkup:
-    """Create post-conversion result menu"""
+    """Create post-conversion result menu with back navigation"""
     keyboard = []
 
     # Add "Convert to Another Format" button if we know the input format
@@ -285,19 +288,23 @@ def create_result_menu(conv_id: str, input_format: str = None) -> InlineKeyboard
                 InlineKeyboardButton("📜 View History", callback_data="menu_history"),
                 InlineKeyboardButton("🏠 Main Menu", callback_data="menu_main"),
             ],
+            [InlineKeyboardButton("🔙 Back", callback_data="menu_convert")],
         ]
     )
     return InlineKeyboardMarkup(keyboard)
 
 
-def create_error_menu() -> InlineKeyboardMarkup:
-    """Create error handling menu"""
+def create_error_menu(back_action: str = "menu_convert") -> InlineKeyboardMarkup:
+    """Create error handling menu with back navigation"""
     keyboard = [
         [
             InlineKeyboardButton("🔄 Try Again", callback_data="menu_convert"),
             InlineKeyboardButton("🏠 Main Menu", callback_data="menu_main"),
         ],
-        [InlineKeyboardButton("❓ Help", callback_data="menu_help")],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data=back_action),
+            InlineKeyboardButton("❓ Help", callback_data="menu_help"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 

@@ -29,6 +29,14 @@ cairosvg>=2.7.0
 trimesh>=4.0.0
 numpy>=1.26.0
 
+# Archive support
+py7zr>=0.20.0
+rarfile>=4.1
+
+# Performance optimization
+uvloop>=0.19.0;sys_platform!='win32'
+orjson>=3.9.0
+
 # Utilities
 python-dotenv>=1.0.0
 requests>=2.31.0

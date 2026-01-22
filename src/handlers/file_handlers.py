@@ -26,12 +26,19 @@ from src.ui.keyboards import (
 from src.ui.messages import (
     format_conversion_complete,
     format_conversion_error,
-    format_conversion_started,
+    format_conversion_progress,
     format_files_received,
     format_multi_conversion_summary,
+    format_queue_status_detailed,
 )
 from src.utils.file_manager import FileManager
 from src.utils.history import HistoryEntry, HistoryManager
+from src.utils.queue_manager import queue_manager
+from src.utils.security import (
+    filename_sanitizer,
+    input_validator,
+    rate_limiter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +134,103 @@ async def compress_video_for_telegram(
         return None
 
 
+async def compress_image_for_telegram(
+    input_path: Path, target_size_mb: int = 48
+) -> Optional[Path]:
+    """
+    Compress an image file to fit within Telegram's size limit.
+    Uses Pillow with quality reduction.
+    """
+    try:
+        from PIL import Image
+
+        output_path = input_path.parent / f"compressed_{input_path.name}"
+
+        with Image.open(input_path) as img:
+            # Convert to RGB if needed (for JPEG output)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            # Try progressive quality reduction
+            for quality in [85, 70, 55, 40, 25]:
+                img.save(output_path, "JPEG", quality=quality, optimize=True)
+                if output_path.stat().st_size <= target_size_mb * 1024 * 1024:
+                    logger.info(f"Image compressed at quality={quality}")
+                    return output_path
+
+            # Still too large, resize
+            scale = 0.7
+            while scale > 0.1:
+                new_size = (int(img.width * scale), int(img.height * scale))
+                resized = img.resize(new_size, Image.LANCZOS)
+                resized.save(output_path, "JPEG", quality=70, optimize=True)
+                if output_path.stat().st_size <= target_size_mb * 1024 * 1024:
+                    logger.info(f"Image resized to {new_size} and compressed")
+                    return output_path
+                scale -= 0.1
+
+        logger.warning("Could not compress image enough")
+        return None
+
+    except Exception as e:
+        logger.error(f"Image compression error: {e}")
+        return None
+
+
+async def compress_to_archive(
+    input_path: Path, target_size_mb: int = 48
+) -> Optional[Path]:
+    """
+    Compress a file into a ZIP archive.
+    Useful for documents and other compressible files.
+    """
+    import zipfile
+
+    try:
+        output_path = input_path.parent / f"{input_path.stem}.zip"
+
+        with zipfile.ZipFile(
+            output_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9
+        ) as zf:
+            zf.write(input_path, input_path.name)
+
+        new_size = output_path.stat().st_size
+        if new_size <= target_size_mb * 1024 * 1024:
+            logger.info(f"Compressed to ZIP: {new_size / 1024 / 1024:.1f}MB")
+            return output_path
+        else:
+            output_path.unlink()
+            return None
+
+    except Exception as e:
+        logger.error(f"Archive compression error: {e}")
+        return None
+
+
+async def try_compress_file(
+    input_path: Path, file_type: str, target_size_mb: int = 48
+) -> Optional[Path]:
+    """
+    Attempt to compress a file based on its type.
+    Returns compressed path or None if compression fails/not possible.
+    """
+    file_type = file_type.lower()
+
+    # Video files
+    if file_type in {"mp4", "avi", "mkv", "mov", "webm", "flv", "m4v"}:
+        return await compress_video_for_telegram(input_path, target_size_mb)
+
+    # Image files
+    if file_type in {"png", "jpeg", "jpg", "bmp", "tiff", "webp"}:
+        return await compress_image_for_telegram(input_path, target_size_mb)
+
+    # Try ZIP compression for other compressible formats
+    if file_type in {"pdf", "docx", "xlsx", "txt", "json", "xml", "csv"}:
+        return await compress_to_archive(input_path, target_size_mb)
+
+    return None
+
+
 async def split_file(input_path: Path, chunk_size_mb: int = 48) -> List[Path]:
     """
     Split a large file into smaller chunks.
@@ -175,11 +279,86 @@ class FileHandlers:
         self.files = file_manager
         self._conversion_semaphore = asyncio.Semaphore(3)  # Max 3 concurrent
 
+    async def _animate_progress(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        message,
+        filename: str,
+        source_format: str,
+        target_format: str,
+    ):
+        """Animate progress message during conversion"""
+        stages = ["Processing", "Converting", "Finalizing"]
+        progress = 10
+        stage_idx = 0
+
+        try:
+            while True:
+                await asyncio.sleep(2)  # Update every 2 seconds
+
+                # Increment progress
+                progress = min(90, progress + 15)
+                if progress > 60:
+                    stage_idx = 2
+                elif progress > 30:
+                    stage_idx = 1
+
+                try:
+                    await message.edit_text(
+                        format_conversion_progress(
+                            filename,
+                            source_format,
+                            target_format,
+                            progress=progress,
+                            stage=stages[stage_idx],
+                        ),
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                except Exception:
+                    # Message may have been deleted or edited
+                    pass
+        except asyncio.CancelledError:
+            pass
+
+    async def _safe_edit_or_send(
+        self,
+        message,
+        context,
+        chat_id: int,
+        text: str,
+        parse_mode=None,
+        reply_markup=None,
+    ):
+        """Safely edit a message or send a new one if editing fails"""
+        try:
+            await message.edit_text(
+                text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming document files"""
         message = update.message
         document = message.document
         user_id = update.effective_user.id
+
+        # Rate limiting check
+        if not rate_limiter.check_message_limit(user_id):
+            remaining = rate_limiter.get_remaining_messages(user_id)
+            await message.reply_text(
+                f"⚠️ Rate limit exceeded. Please wait a moment.\n"
+                f"You can send {remaining} more files per minute.",
+                reply_markup=create_error_menu(),
+            )
+            return
 
         # Validate file
         if not self._validate_file(document):
@@ -419,7 +598,7 @@ class FileHandlers:
         files: List[Dict],
         target_format: str,
     ):
-        """Process actual file conversion"""
+        """Process actual file conversion with queue management"""
         # Handle both Update objects and CallbackQuery objects
         if hasattr(update, "effective_user"):
             user_id = update.effective_user.id
@@ -430,17 +609,29 @@ class FileHandlers:
             chat_id = update.message.chat_id
         results = []
 
+        # Check queue status and show to user
+        queue_info = queue_manager.get_user_queue_position(user_id)
+        if queue_info["total_pending"] > 0:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=format_queue_status_detailed(
+                    queue_info["user_pending"] + 1,
+                    queue_info["total_pending"] + 1,
+                    queue_info["active_workers"],
+                    queue_info["max_workers"],
+                ),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
         async with self._conversion_semaphore:
             for file_info in files:
                 try:
                     input_path = Path(file_info["path"])
                     source_format = file_info["format"]
 
-                    # Check if file exists, if not try to re-download using file_id
+                    # Check if file exists, if not try to re-download
                     if not input_path.exists() and file_info.get("file_id"):
-                        logger.info(
-                            f"Re-downloading file from Telegram: {file_info['name']}"
-                        )
+                        logger.info(f"Re-downloading file: {file_info['name']}")
                         try:
                             tg_file = await context.bot.get_file(file_info["file_id"])
                             file_bytes = await tg_file.download_as_bytearray()
@@ -467,20 +658,43 @@ class FileHandlers:
                         )
                         continue
 
-                    # Send progress message
+                    # Send animated progress message
                     progress_msg = await context.bot.send_message(
                         chat_id=chat_id,
-                        text=format_conversion_started(
-                            file_info["name"], source_format, target_format
+                        text=format_conversion_progress(
+                            file_info["name"],
+                            source_format,
+                            target_format,
+                            progress=10,
+                            stage="Processing",
                         ),
                         parse_mode=ParseMode.MARKDOWN,
                     )
 
-                    # Perform conversion
-                    result = await asyncio.wait_for(
-                        self.converter.convert(input_path, target_format),
-                        timeout=CONVERSION_TIMEOUT,
+                    # Start progress animation task
+                    animation_task = asyncio.create_task(
+                        self._animate_progress(
+                            context,
+                            progress_msg,
+                            file_info["name"],
+                            source_format,
+                            target_format,
+                        )
                     )
+
+                    try:
+                        # Perform conversion
+                        result = await asyncio.wait_for(
+                            self.converter.convert(input_path, target_format),
+                            timeout=CONVERSION_TIMEOUT,
+                        )
+                    finally:
+                        # Stop animation
+                        animation_task.cancel()
+                        try:
+                            await animation_task
+                        except asyncio.CancelledError:
+                            pass
 
                     if result.success and result.output_path:
                         output_path = result.output_path
@@ -488,44 +702,46 @@ class FileHandlers:
 
                         # Check file size and handle large files
                         if file_size > TELEGRAM_MAX_SIZE:
-                            await progress_msg.edit_text(
+                            await self._safe_edit_or_send(
+                                progress_msg,
+                                context,
+                                chat_id,
                                 f"⚠️ File is {file_size / 1024 / 1024:.1f}MB "
-                                f"(limit: 50MB)\n\n🔄 Attempting compression..."
+                                f"(limit: 50MB)\n\n🔄 Attempting compression...",
                             )
 
-                            # Try to compress if it's a video
-                            is_video = target_format.lower() in [
-                                "mp4",
-                                "avi",
-                                "mkv",
-                                "mov",
-                                "webm",
-                                "m4v",
-                            ]
-                            if is_video:
-                                compressed = await compress_video_for_telegram(
-                                    output_path
-                                )
-                                if compressed and compressed.exists():
-                                    # Use compressed file instead
-                                    await self.files.cleanup_file(output_path)
-                                    output_path = compressed
-                                    file_size = compressed.stat().st_size
-                                    await progress_msg.edit_text(
-                                        f"✅ Compressed to "
-                                        f"{file_size / 1024 / 1024:.1f}MB"
-                                    )
+                            # Try compression based on file type
+                            compressed = await try_compress_file(
+                                output_path,
+                                target_format,
+                                target_size_mb=48,
+                            )
 
-                            # If still too large, split or warn
+                            if compressed and compressed.exists():
+                                # Use compressed file
+                                await self.files.cleanup_file(output_path)
+                                output_path = compressed
+                                file_size = compressed.stat().st_size
+                                await self._safe_edit_or_send(
+                                    progress_msg,
+                                    context,
+                                    chat_id,
+                                    f"✅ Compressed to {file_size / 1024 / 1024:.1f}MB",
+                                )
+
+                            # If still too large, warn user
                             if file_size > TELEGRAM_MAX_SIZE:
-                                await progress_msg.edit_text(
-                                    f"⚠️ *File too large* "
-                                    f"({file_size / 1024 / 1024:.1f}MB)\n\n"
-                                    "Telegram bots cannot send files > 50MB.\n"
-                                    "Options:\n"
-                                    "• Use a smaller/shorter source file\n"
-                                    "• Convert to a more compressed format\n"
-                                    "• Use `@TGFileSplitBot` to split & download",
+                                size_mb = file_size / 1024 / 1024
+                                await self._safe_edit_or_send(
+                                    progress_msg,
+                                    context,
+                                    chat_id,
+                                    f"⚠️ *File too large* ({size_mb:.1f}MB)\n\n"
+                                    "Telegram bots cannot send > 50MB.\n\n"
+                                    "*Options:*\n"
+                                    "• Use smaller source file\n"
+                                    "• Convert to compressed format\n"
+                                    "• Use @TGFileSplitBot to split",
                                     parse_mode=ParseMode.MARKDOWN,
                                     reply_markup=create_error_menu(),
                                 )
@@ -534,7 +750,7 @@ class FileHandlers:
                                         "filename": file_info["name"],
                                         "target_format": target_format,
                                         "success": False,
-                                        "error": f"File too large: {file_size // 1024 // 1024}MB",
+                                        "error": f"Too large: {int(size_mb)}MB",
                                     }
                                 )
                                 await self.files.cleanup_file(output_path)
@@ -627,8 +843,10 @@ class FileHandlers:
                             }
                         )
 
-                    # Cleanup input file
+                    # PRIVACY: Immediately cleanup all files after processing
+                    # Don't keep any user files on server
                     await self.files.cleanup_file(input_path)
+                    logger.debug(f"Cleaned up input: {input_path}")
 
                 except asyncio.TimeoutError:
                     results.append(
@@ -639,6 +857,8 @@ class FileHandlers:
                             "error": "Conversion timed out",
                         }
                     )
+                    # Cleanup on timeout
+                    await self.files.cleanup_file(Path(file_info["path"]))
 
                 except Exception as e:
                     logger.error(f"Conversion error: {e}")
@@ -650,6 +870,8 @@ class FileHandlers:
                             "error": str(e),
                         }
                     )
+                    # Cleanup on error
+                    await self.files.cleanup_file(Path(file_info["path"]))
 
         # Clear pending files
         context.user_data["pending_files"] = []
@@ -673,15 +895,24 @@ class FileHandlers:
             )
 
     def _validate_file(self, document: Document) -> bool:
-        """Validate uploaded file"""
+        """Validate uploaded file for security and size"""
         if not document:
             return False
         if document.file_size and document.file_size > MAX_UPLOAD_SIZE:
             return False
+
+        # Check for blocked extensions
+        if document.file_name:
+            if not filename_sanitizer.is_safe_extension(document.file_name):
+                logger.warning(f"Blocked unsafe extension: {document.file_name}")
+                return False
+
         return True
 
     def _get_file_extension(self, filename: str) -> Optional[str]:
         """Extract file extension from filename"""
         if not filename or "." not in filename:
             return None
-        return filename.rsplit(".", 1)[-1].lower()
+        ext = filename.rsplit(".", 1)[-1].lower()
+        # Validate format
+        return input_validator.validate_format(ext)
