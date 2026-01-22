@@ -351,11 +351,12 @@ class FileHandlers:
         user_id = update.effective_user.id
 
         # Rate limiting check
-        if not rate_limiter.check_message_limit(user_id):
-            remaining = rate_limiter.get_remaining_messages(user_id)
+        is_allowed, wait_time = rate_limiter.check_rate_limit(user_id, "message")
+        if not is_allowed:
+            remaining = rate_limiter.get_remaining(user_id, "message")
             await message.reply_text(
-                f"⚠️ Rate limit exceeded. Please wait a moment.\n"
-                f"You can send {remaining} more files per minute.",
+                f"⚠️ Rate limit exceeded. Please wait {wait_time}s.\n"
+                f"Remaining actions: {remaining}",
                 reply_markup=create_error_menu(),
             )
             return
