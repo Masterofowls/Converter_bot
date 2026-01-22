@@ -436,6 +436,37 @@ class FileHandlers:
                     input_path = Path(file_info["path"])
                     source_format = file_info["format"]
 
+                    # Check if file exists, if not try to re-download using file_id
+                    if not input_path.exists() and file_info.get("file_id"):
+                        logger.info(
+                            f"Re-downloading file from Telegram: {file_info['name']}"
+                        )
+                        try:
+                            tg_file = await context.bot.get_file(file_info["file_id"])
+                            file_bytes = await tg_file.download_as_bytearray()
+                            input_path = await self.files.save_file(
+                                bytes(file_bytes), file_info["name"], user_id
+                            )
+                            file_info["path"] = str(input_path)
+                        except Exception as download_err:
+                            logger.error(f"Failed to re-download file: {download_err}")
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text="❌ Could not retrieve original file. "
+                                "Please send the file again.",
+                                reply_markup=create_error_menu(),
+                            )
+                            continue
+                    elif not input_path.exists():
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"❌ File not found: `{file_info['name']}`\n"
+                            f"Please send the file again.",
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=create_error_menu(),
+                        )
+                        continue
+
                     # Send progress message
                     progress_msg = await context.bot.send_message(
                         chat_id=chat_id,
@@ -539,7 +570,14 @@ class FileHandlers:
                             "file_id": file_info.get("file_id"),
                         }
 
-                        # Save to history
+                        # Save to history (with null checks)
+                        sent_file_id = None
+                        sent_message_id = None
+                        if sent_msg:
+                            sent_message_id = sent_msg.message_id
+                            if sent_msg.document:
+                                sent_file_id = sent_msg.document.file_id
+
                         entry = HistoryEntry(
                             id=result.conversion_id,
                             user_id=user_id,
@@ -550,8 +588,8 @@ class FileHandlers:
                             file_size=file_size,
                             timestamp=datetime.now().isoformat(),
                             status="success",
-                            file_id=sent_msg.document.file_id,
-                            message_id=sent_msg.message_id,
+                            file_id=sent_file_id,
+                            message_id=sent_message_id,
                             chat_id=chat_id,
                         )
                         await self.history.add_entry(user_id, entry)

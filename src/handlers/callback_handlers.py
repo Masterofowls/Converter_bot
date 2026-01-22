@@ -87,8 +87,40 @@ class CallbackHandlers:
 
         except Exception as e:
             logger.error(f"Callback error: {e}")
+            # Try to edit, if fails (e.g., document message), send new message
+            try:
+                await query.edit_message_text(
+                    f"❌ An error occurred: {e}", reply_markup=create_error_menu()
+                )
+            except Exception:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=f"❌ An error occurred: {e}",
+                    reply_markup=create_error_menu(),
+                )
+
+    async def _safe_edit_or_send(
+        self,
+        query: CallbackQuery,
+        context: ContextTypes.DEFAULT_TYPE,
+        text: str,
+        reply_markup=None,
+        parse_mode=None,
+    ):
+        """Try to edit message, fall back to sending new message if edit fails"""
+        try:
             await query.edit_message_text(
-                f"❌ An error occurred: {e}", reply_markup=create_error_menu()
+                text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            # Message can't be edited (e.g., document with caption)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
             )
 
     async def _handle_menu(
@@ -98,14 +130,18 @@ class CallbackHandlers:
         menu_type = data.replace("menu_", "")
 
         if menu_type == "main":
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 format_welcome_message(),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=create_main_menu(),
             )
 
         elif menu_type == "convert":
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 "📁 *Send me a file to convert*\n\n"
                 "You can send multiple files at once.\n"
                 "Or select a format category below:",
@@ -118,7 +154,9 @@ class CallbackHandlers:
             entries = await self.history.get_user_history(user_id, limit=50)
 
             if not entries:
-                await query.edit_message_text(
+                await self._safe_edit_or_send(
+                    query,
+                    context,
                     format_history_empty(),
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=create_main_menu(),
@@ -134,7 +172,9 @@ class CallbackHandlers:
                 for e in entries
             ]
 
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 f"📜 *Conversion History* ({len(entries)} items)",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=create_history_menu(history_data),
@@ -144,21 +184,27 @@ class CallbackHandlers:
             user_id = query.from_user.id
             settings = self.commands._get_user_settings(user_id)
 
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 format_settings(settings),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=create_settings_menu(settings),
             )
 
         elif menu_type == "help":
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 format_help_message(),
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=create_main_menu(),
             )
 
         elif menu_type == "formats":
-            await query.edit_message_text(
+            await self._safe_edit_or_send(
+                query,
+                context,
                 "📁 *Supported Format Categories*\n\nTap a category to see details:",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=create_format_info_menu(),
@@ -513,6 +559,7 @@ class CallbackHandlers:
     ):
         """Handle 'Convert to Another Format' - show format selection for last file"""
         entry_id = data.replace("reselect_fmt_", "")
+        chat_id = query.message.chat_id
 
         # Get the last conversion info from user_data or history
         last_conv = context.user_data.get("last_conversion")
@@ -532,8 +579,10 @@ class CallbackHandlers:
             ]
             context.user_data["input_format"] = input_format
 
-            await query.edit_message_text(
-                f"🔀 *Select new format for:*\n`{filename}`\n\n"
+            # Send new message (can't edit document caption to show keyboard)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🔀 *Select new format for:*\n`{filename}`\n\n"
                 f"Current format: *{input_format.upper()}*",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=create_format_selection_menu(input_format),
@@ -542,14 +591,16 @@ class CallbackHandlers:
             # Try to get from history
             entry = await self.history.get_entry_by_id(user_id, entry_id)
             if entry:
-                await query.edit_message_text(
-                    f"⚠️ Original file no longer available.\n\n"
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="⚠️ Original file no longer available.\n\n"
                     f"Please send `{entry.original_name}` again to convert.",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=create_main_menu(),
                 )
             else:
-                await query.edit_message_text(
-                    "❌ Conversion info not found. Please send a new file.",
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Conversion info not found. Please send a new file.",
                     reply_markup=create_main_menu(),
                 )
