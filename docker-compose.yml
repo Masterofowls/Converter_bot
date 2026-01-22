@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  converter_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: converter_bot
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN:-8575519773:AAFIKFqUAlOI2vZw1_ei7xOAA7_gQWKfiJc}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_CONCURRENT_CONVERSIONS=${MAX_CONCURRENT_CONVERSIONS:-3}
+      # Optional external API keys
+      - CLOUDCONVERT_ENABLED=${CLOUDCONVERT_ENABLED:-false}
+      - CLOUDCONVERT_API_KEY=${CLOUDCONVERT_API_KEY:-}
+      - ZAMZAR_ENABLED=${ZAMZAR_ENABLED:-false}
+      - ZAMZAR_API_KEY=${ZAMZAR_API_KEY:-}
+
+    # Volume mounts for persistence
+    volumes:
+      - converter_data:/app/data
+      - converter_temp:/app/temp
+
+    # Resource limits for optimization
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network configuration
+    networks:
+      - bot_network
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Read-only root filesystem with writable temp dirs
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
+
+# Persistent volumes
+volumes:
+  converter_data:
+    driver: local
+  converter_temp:
+    driver: local
+
+# Network for isolation
+networks:
+  bot_network:
+    driver: bridge
